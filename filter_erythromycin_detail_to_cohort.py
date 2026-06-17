@@ -39,7 +39,7 @@ cohort["patient_id"] = cohort["patient_id"].astype(str).str.strip()
 detail["patient_id"] = detail["patient_id"].astype(str).str.strip()
 
 cohort_ids = set(cohort["patient_id"])
-detail_filtered = detail[detail["patient_id"].isin(cohort_ids)]
+detail_filtered = detail[detail["patient_id"].isin(cohort_ids)].copy()
 # Strip whitespace from route without converting NaN to the literal string
 # "nan" - .str.strip() on its own correctly leaves real NaN values as NaN,
 # unlike .astype(str).str.strip() which would corrupt the isna() check below.
@@ -52,6 +52,12 @@ after_dx = detail_filtered[after_dx_mask]
 after_dx_oral = after_dx[after_dx["route"].str.contains("oral", case=False, na=False)]
 after_dx_topical = after_dx[after_dx["route"].str.contains("topical", case=False, na=False)]
 after_dx_ophthalmic = after_dx[after_dx["route"].str.contains("ophthalmic", case=False, na=False)]
+# Added after the first real run surfaced this in the route value_counts -
+# IV/injectable erythromycin is a recognized off-label prokinetic agent in
+# hospitalized patients, arguably MORE specific to gastroparesis management
+# than oral use (oral erythromycin's far more common indication is routine
+# antibiotic treatment).
+after_dx_injectable = after_dx[after_dx["route"].str.contains("injectable", case=False, na=False)]
 
 cohort_n = len(cohort_ids)  # matches the exact set used for filtering above, not a separate nunique() call
 
@@ -65,6 +71,7 @@ after_dx_n = after_dx["patient_id"].nunique()
 oral_n = after_dx_oral["patient_id"].nunique()
 topical_n = after_dx_topical["patient_id"].nunique()
 ophthalmic_n = after_dx_ophthalmic["patient_id"].nunique()
+injectable_n = after_dx_injectable["patient_id"].nunique()
 unknown_route_n = after_dx[after_dx["route"].isna()]["patient_id"].nunique()
 
 print(f"Filtered from {len(detail):,} to {len(detail_filtered):,} rows")
@@ -79,6 +86,9 @@ print(f"\nOf those on/after-dx patients, breakdown by route (% is of full cohort
 print(f"  oral:       {oral_n:,} ({pct(oral_n)})  (rules out topical/ophthalmic)")
 print(f"  topical:    {topical_n:,} ({pct(topical_n)})  (acne treatment, not gastroparesis)")
 print(f"  ophthalmic: {ophthalmic_n:,} ({pct(ophthalmic_n)})  (eye infection, not gastroparesis)")
+print(f"  injectable: {injectable_n:,} ({pct(injectable_n)})  (IV erythromycin is a recognized off-label")
+print("              prokinetic agent in hospitalized patients - arguably MORE specific to")
+print("              gastroparesis management than oral use, worth flagging to Dr. Sujka)")
 print(f"  missing route (NaN, likely a failed medication_drug.csv join): {unknown_route_n:,} ({pct(unknown_route_n)})")
 print("  -- note: this is distinct from the literal string 'Unknown' TriNetX uses when an HCO")
 print("     didn't specify a route - that shows up as its own row in the value_counts below.")
@@ -89,7 +99,7 @@ print("     with na=False treats them as non-matching), not double-counted or si
 print("\nNote: a patient with erythromycin via more than one route (e.g. an oral course AND")
 print("a separate ophthalmic prescription) counts in both categories above, so oral + topical")
 print("+ ophthalmic can add up to more than the on/after-dx total. That's expected, not an error.")
-route_category_sum = oral_n + topical_n + ophthalmic_n
+route_category_sum = oral_n + topical_n + ophthalmic_n + injectable_n
 print(f"Total after-dx patients: {after_dx_n:,}")
 print(f"Sum of route categories (not deduplicated, will not equal the total above): {route_category_sum:,}")
 print(f"\nAll other route values present in the on/after-dx group (for full visibility):")
