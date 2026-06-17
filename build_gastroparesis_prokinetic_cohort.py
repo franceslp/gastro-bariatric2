@@ -34,7 +34,10 @@ Requires: gsutil already authenticated, pandas installed
 """
 
 import subprocess
+import time
 import pandas as pd
+
+SCRIPT_START_TIME = time.time()
 
 # ---------------------------------------------------------------------------
 # CONFIG - edit these if paths or codes change
@@ -126,10 +129,13 @@ k3184_encounters = {}  # patient_id -> set of distinct, non-null encounter_ids w
 k3184_missing_encounter_rows = 0
 
 rows_seen = 0
+chunk_num = 0
+diag_start = time.time()
 for chunk in stream_gcs_csv(
     DIAGNOSIS_FILE,
     usecols=["patient_id", "encounter_id", "code_system", "code", "date"],
 ):
+    chunk_num += 1
     rows_seen += len(chunk)
     chunk["date"] = parse_dates(chunk["date"], label="diagnosis.csv date")
 
@@ -155,6 +161,10 @@ for chunk in stream_gcs_csv(
     if legacy_mask.any():
         l_min = chunk.loc[legacy_mask].groupby("patient_id")["date"].min().to_dict()
         merge_min(first_5363, l_min)
+
+    if chunk_num % 20 == 0:
+        elapsed_min = (time.time() - diag_start) / 60
+        print(f"    ...diagnosis.csv: {rows_seen:,} rows processed so far ({elapsed_min:.1f} min elapsed, {len(first_k3184):,} K31.84 patients found)")
 
 k3184_encounter_count = {pid: len(encs) for pid, encs in k3184_encounters.items()}
 patients_with_encounter_data = len(k3184_encounter_count)
@@ -190,15 +200,21 @@ drug_last_date = {code: {} for code in PROKINETIC_RXNORM_CODES}
 erythromycin_ingredient_records = []  # one entry per erythromycin hit, for drug-detail lookup
 
 rows_seen = 0
+chunk_num = 0
+med_ing_start = time.time()
 for chunk in stream_gcs_csv(
     MED_INGREDIENT_FILE,
     usecols=["patient_id", "unique_id", "code_system", "code", "start_date"],
 ):
+    chunk_num += 1
     rows_seen += len(chunk)
     chunk["start_date"] = parse_dates(chunk["start_date"], label="medication_ingredient.csv start_date")
 
     rx_chunk = chunk[chunk["code_system"] == "RxNorm"]
     if rx_chunk.empty:
+        if chunk_num % 20 == 0:
+            elapsed_min = (time.time() - med_ing_start) / 60
+            print(f"    ...medication_ingredient.csv: {rows_seen:,} rows processed so far ({elapsed_min:.1f} min elapsed)")
         continue
 
     for code in PROKINETIC_RXNORM_CODES:
@@ -214,6 +230,10 @@ for chunk in stream_gcs_csv(
                 erythromycin_ingredient_records.extend(
                     sub[["patient_id", "unique_id", "start_date"]].to_dict("records")
                 )
+
+    if chunk_num % 20 == 0:
+        elapsed_min = (time.time() - med_ing_start) / 60
+        print(f"    ...medication_ingredient.csv: {rows_seen:,} rows processed so far ({elapsed_min:.1f} min elapsed)")
 
 print(f"  scanned {rows_seen:,} medication_ingredient rows")
 for code, name in PROKINETIC_RXNORM_CODES.items():
@@ -235,15 +255,22 @@ drug_detail_lookup = {}  # unique_id -> {route, brand, strength, quantity_dispen
 print("Scanning medication_drug.csv for matching product-level detail...")
 
 rows_seen = 0
+chunk_num = 0
+med_drug_start = time.time()
 for chunk in stream_gcs_csv(
     MED_DRUG_FILE,
     usecols=["unique_id", "route", "brand", "strength", "quantity_dispensed", "days_supply"],
 ):
+    chunk_num += 1
     rows_seen += len(chunk)
     match_mask = chunk["unique_id"].isin(erythromycin_unique_ids)
     if match_mask.any():
         for rec in chunk.loc[match_mask].to_dict("records"):
             drug_detail_lookup[rec["unique_id"]] = rec
+
+    if chunk_num % 20 == 0:
+        elapsed_min = (time.time() - med_drug_start) / 60
+        print(f"    ...medication_drug.csv: {rows_seen:,} rows processed so far ({elapsed_min:.1f} min elapsed)")
 
 print(f"  scanned {rows_seen:,} medication_drug rows")
 print(f"  matched product-level detail for {len(drug_detail_lookup):,} of {len(erythromycin_unique_ids):,} erythromycin records")
@@ -406,3 +433,6 @@ erythromycin_only_mask = (
 )
 print(f"\n  of the ever-after-dx group, erythromycin is the ONLY drug for: {erythromycin_only_mask.sum():,}")
 print(f"  of those, how many have oral-route evidence ever after dx: {(erythromycin_only_mask & cohort_df['erythromycin_oral_evidence_ever_after_dx']).sum():,}")
+
+total_elapsed_min = (time.time() - SCRIPT_START_TIME) / 60
+print(f"\nTotal script runtime: {total_elapsed_min:.1f} minutes")
