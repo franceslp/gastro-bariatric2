@@ -1,11 +1,20 @@
 """
-add_bariatric_surgery_and_sadda_concurrency.py
+add_bariatric_surgery_and_concurrency.py
 
 Adds bariatric surgery (sleeve gastrectomy / Roux-en-Y gastric bypass)
-evidence to the cohort, then applies Sadda et al.'s actual 5-year
-concurrency rule: the later of (first_diabetes_dx_date, first_K31_84_date)
-- the point at which both conditions are first jointly documented - must
-fall within 5 years before the bariatric surgery date to qualify.
+evidence to the cohort, then flags patients meeting a diabetes-gastroparesis
+concurrency rule relative to the surgery date: the later of
+(first_diabetes_dx_date, first_K31_84_date) - the point at which both
+conditions are first jointly documented - must fall within some window
+before the bariatric surgery date.
+
+WINDOW LENGTH: rather than locking in one cutoff, this generates BOTH a
+1-year window (a deliberate, stricter alternative) and Sadda et al.'s own
+published 5-year window as separate columns (meets_1yr_concurrency_rule,
+meets_5yr_concurrency_rule) - costs nothing extra since
+days_concurrent_to_bariatric_surgery is already continuous, and lets you
+compare patient counts under each before committing to one with Dr. Sujka.
+Add more entries to CONCURRENCY_WINDOWS_YEARS below for other cutoffs.
 
 CPT codes (reused from the sister bariatric-surgery project, where they
 were specifically chosen to capture sleeve/bypass and exclude other
@@ -46,13 +55,15 @@ import pandas as pd
 GCS_BASE = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
 PROCEDURE_FILE = f"{GCS_BASE}/procedure.csv"
 COHORT_CSV = "gastroparesis_prokinetic_cohort_with_GES_diabetes_and_erythromycin_routes.csv"
-OUTPUT_CSV = "gastroparesis_prokinetic_cohort_FULL_with_bariatric_sadda.csv"
+OUTPUT_CSV = "gastroparesis_prokinetic_cohort_FULL_with_bariatric_and_concurrency.csv"
 
 BARIATRIC_CPT_CODES = {"43775", "43644", "43645", "43846", "43847"}
 SLEEVE_CODES = {"43775"}
 BYPASS_CODES = {"43644", "43645", "43846", "43847"}
-SADDA_CONCURRENCY_WINDOW_YEARS = 5
-SADDA_WINDOW_DAYS = round(SADDA_CONCURRENCY_WINDOW_YEARS * 365.25)  # 1826
+CONCURRENCY_WINDOWS_YEARS = {"1yr": 1, "5yr": 5}
+CONCURRENCY_WINDOWS_DAYS = {
+    label: round(years * 365.25) for label, years in CONCURRENCY_WINDOWS_YEARS.items()
+}  # {"1yr": 365, "5yr": 1826}
 
 if not os.path.exists(COHORT_CSV):
     raise FileNotFoundError(f"Missing required input file: {COHORT_CSV}")
@@ -143,12 +154,15 @@ cohort_df["has_both_sleeve_and_bypass_codes"] = cohort_df["bariatric_cpt_codes_s
     and bool(BYPASS_CODES & set(s.split(",")))
 )
 
-# --- Sadda et al.'s actual concurrency rule -------------------------------
-# "the first concurrent documentation of diabetes and gastroparesis was
-# required to occur within 5 years before the start of follow-up" - i.e.
-# max(first_diabetes_dx_date, first_K31_84_date) must fall within
-# SADDA_CONCURRENCY_WINDOW_YEARS before bariatric_date (the surgical index
-# date here, since this project's "surgery" is the bariatric procedure).
+# --- Diabetes-gastroparesis concurrency rule, relative to surgery date --
+# Adapted from Sadda et al.'s concept ("the first concurrent documentation
+# of diabetes and gastroparesis", i.e. the later of the two first-diagnosis
+# dates). Rather than locking in one window length, both 1-year (a
+# deliberate stricter alternative discussed earlier) and 5-year (Sadda's
+# own published window) flags are generated side by side, since
+# days_concurrent_to_bariatric_surgery is already a continuous value -
+# this costs nothing extra and lets you compare patient counts under each
+# before committing to one with Dr. Sujka.
 first_k3184_dt = pd.to_datetime(cohort_df["first_K31_84_date"], errors="coerce")
 first_diabetes_dt = pd.to_datetime(cohort_df["first_diabetes_dx_date"], errors="coerce")
 bariatric_dt = pd.to_datetime(cohort_df["bariatric_date"], errors="coerce")
@@ -166,11 +180,12 @@ cohort_df["diabetes_gastroparesis_concurrent_date"] = concurrent_dt
 all_required_present = both_dx_present & cohort_df["has_bariatric_surgery"] & bariatric_dt.notna()
 cohort_df["days_concurrent_to_bariatric_surgery"] = (bariatric_dt - concurrent_dt).dt.days
 
-cohort_df["meets_sadda_5yr_concurrency_rule"] = (
-    all_required_present
-    & (cohort_df["days_concurrent_to_bariatric_surgery"] >= 0)
-    & (cohort_df["days_concurrent_to_bariatric_surgery"] <= SADDA_WINDOW_DAYS)
-)
+for label, window_days in CONCURRENCY_WINDOWS_DAYS.items():
+    cohort_df[f"meets_{label}_concurrency_rule"] = (
+        all_required_present
+        & (cohort_df["days_concurrent_to_bariatric_surgery"] >= 0)
+        & (cohort_df["days_concurrent_to_bariatric_surgery"] <= window_days)
+    )
 
 print("\nSANITY CHECK:")
 print(f"  cohort size: {len(cohort_df):,}")
@@ -183,18 +198,22 @@ print(
     f"  of those, with more than one distinct surgery date on record (possible revision): "
     f"{(cohort_df['has_bariatric_surgery'] & (cohort_df['num_distinct_bariatric_surgery_dates'] > 1)).sum():,}"
 )
-print(f"  cohort patients meeting Sadda's 5-year concurrency rule: {cohort_df['meets_sadda_5yr_concurrency_rule'].sum():,}")
+for label in CONCURRENCY_WINDOWS_DAYS:
+    print(f"  cohort patients meeting the {label} concurrency rule: {cohort_df[f'meets_{label}_concurrency_rule'].sum():,}")
 
 in_period = cohort_df["in_study_period"]
 print(f"\nOf the {in_period.sum():,} in-study-period K31.84 patients:")
 print(f"  have bariatric surgery on record: {(in_period & cohort_df['has_bariatric_surgery']).sum():,}")
-print(f"  meet Sadda's 5-year concurrency rule: {(in_period & cohort_df['meets_sadda_5yr_concurrency_rule']).sum():,}")
+for label in CONCURRENCY_WINDOWS_DAYS:
+    n = (in_period & cohort_df[f"meets_{label}_concurrency_rule"]).sum()
+    print(f"  meet the {label} concurrency rule: {n:,}")
 
 cohort_df.to_csv(OUTPUT_CSV, index=False)
 print(f"\nWrote {OUTPUT_CSV} with has_bariatric_surgery, bariatric_date, bariatric_cpt_codes_seen,")
 print("num_distinct_bariatric_cpt_codes, num_distinct_bariatric_surgery_dates,")
 print("has_both_sleeve_and_bypass_codes, diabetes_gastroparesis_concurrent_date,")
-print("days_concurrent_to_bariatric_surgery, and meets_sadda_5yr_concurrency_rule columns added.")
+print("days_concurrent_to_bariatric_surgery, meets_1yr_concurrency_rule, and")
+print("meets_5yr_concurrency_rule columns added.")
 print(f"(Original {COHORT_CSV} left untouched - use the new file as input to the next step.)")
 
 total_elapsed_min = (time.time() - SCRIPT_START_TIME) / 60
