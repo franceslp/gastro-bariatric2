@@ -51,3 +51,25 @@ bins = [0, 365, 730, 1095, 1460, 1826]
 labels = ["0-1 yr", "1-2 yr", "2-3 yr", "3-4 yr", "4-5 yr"]
 bucketed = pd.cut(days_before_surgery, bins=bins, labels=labels, include_lowest=True)
 print(bucketed.value_counts().sort_index())
+
+# --- Same question, for the OTHER group: patients where DIABETES was the
+# later diagnosis (i.e. gastroparesis came first). For THIS subgroup, the
+# existing days_concurrent_E10_E11_to_surgery column reflects the DIABETES
+# diagnosis (since diabetes is the later/concurrent date for them) - it does
+# NOT tell us how far the gastroparesis diagnosis itself was from surgery.
+# That needs a fresh calculation specific to this subgroup.
+diabetes_later_group = qualified[qualified["diabetes_is_later"]].copy()
+gp_dt_for_this_group = pd.to_datetime(diabetes_later_group["first_K31_84_date"], errors="coerce")
+surgery_dt_for_this_group = pd.to_datetime(diabetes_later_group["bariatric_date"], errors="coerce")
+days_gp_to_surgery_when_gp_first = (surgery_dt_for_this_group - gp_dt_for_this_group).dt.days
+
+print(f"\n\nFor the {len(diabetes_later_group):,} patients where GASTROPARESIS came first (diabetes was the later diagnosis),")
+print("days between GASTROPARESIS diagnosis and surgery:")
+print(f"  mean:   {days_gp_to_surgery_when_gp_first.mean():,.0f} days (~{days_gp_to_surgery_when_gp_first.mean()/365.25:.1f} years)")
+print(f"  median: {days_gp_to_surgery_when_gp_first.median():,.0f} days (~{days_gp_to_surgery_when_gp_first.median()/365.25:.1f} years)")
+print(f"  min:    {days_gp_to_surgery_when_gp_first.min():,.0f} days")
+print(f"  max:    {days_gp_to_surgery_when_gp_first.max():,.0f} days (~{days_gp_to_surgery_when_gp_first.max()/365.25:.1f} years)")
+
+print("\nBreakdown by year before surgery (gastroparesis-to-surgery, this subgroup):")
+bucketed_gp_first = pd.cut(days_gp_to_surgery_when_gp_first, bins=bins, labels=labels, include_lowest=True)
+print(bucketed_gp_first.value_counts().sort_index())
