@@ -15,8 +15,12 @@ INPUT_CSV = "bariatric_subset_5yr_concurrency_E10_E11.csv"
 
 df = pd.read_csv(INPUT_CSV, dtype={"patient_id": str}, low_memory=False)
 
-qualified = df[df["meets_5yr_rule_E10_E11"] == True].copy()
-print(f"Patients meeting the 5yr E10/E11 rule: {len(qualified):,}\n")
+# Restrict to in-study-period K31.84 patients (diagnosed on/after Oct 2015) -
+# matches the 1,126 figure from yesterday's run. Without this filter, the
+# count includes patients whose K31.84 date falls before the study period,
+# which yesterday's reported number excluded.
+qualified = df[(df["meets_5yr_rule_E10_E11"] == True) & (df["in_study_period"] == True)].copy()
+print(f"Patients meeting the 5yr E10/E11 rule (in-study-period only): {len(qualified):,}\n")
 
 k3184_dt = pd.to_datetime(qualified["first_K31_84_date"], errors="coerce")
 diabetes_dt = pd.to_datetime(qualified["first_E10_or_E11_date"], errors="coerce")
