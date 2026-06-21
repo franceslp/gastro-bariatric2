@@ -75,15 +75,15 @@ for chunk in stream_gcs_csv(MED_INGREDIENT_FILE, usecols=["patient_id", "code_sy
         chunk["code_system"] = chunk["code_system"].str.strip()
         rx = chunk[(chunk["code_system"] == "RxNorm") & (chunk["code"].isin(PROKINETIC_RXNORM_CODES.keys()))].copy()
         if not rx.empty:
-            for code, n in rx["code"].value_counts().items():
-                code_occurrence_counts[code] += n
             rx["start_date"] = pd.to_datetime(rx["start_date"], format="%Y%m%d", errors="coerce")
             rx = rx[rx["start_date"].notna()]
             if not rx.empty:
+                for code, n in rx["code"].value_counts().items():
+                    code_occurrence_counts[code] += n
                 rx["anchor"] = rx["patient_id"].map(anchor_lookup)
                 rx["days_after_anchor"] = (rx["start_date"] - rx["anchor"]).dt.days
                 # same-day included (>=0), within 1 year (<=365)
-                qualifying = rx[rx["anchor"].notna() & (rx["days_after_anchor"] >= 0) & (rx["days_after_anchor"] <= WINDOW_DAYS)]
+                qualifying = rx[rx["anchor"].notna() & (rx["days_after_anchor"] >= 0) & (rx["days_after_anchor"] <= WINDOW_DAYS)].copy()
                 if not qualifying.empty:
                     qualifying["drug"] = qualifying["code"].map(PROKINETIC_RXNORM_CODES)
                     for (pid, drug), d in qualifying.groupby(["patient_id", "drug"])["start_date"].min().items():
