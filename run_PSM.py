@@ -73,7 +73,11 @@ gp["group"] = 1
 print(f"Study group loaded: {len(gp):,} patients")
 
 # --- Load comparator pool ---
-comp = pd.read_csv(COMPARATOR_CSV, dtype={"patient_id": str}, low_memory=False)
+comp_base = pd.read_csv("comparator_pool_ready_for_PSM.csv", dtype={"patient_id": str}, low_memory=False)
+comp_bmi = pd.read_csv("comparator_pool_ready_for_PSM_with_BMI.csv", dtype={"patient_id": str},
+                        low_memory=False, usecols=["patient_id", "BMI_at_or_before_surgery",
+                                                    "BMI_date_at_or_before_surgery"])
+comp = comp_base.merge(comp_bmi, on="patient_id", how="left")
 comp["group"] = 0
 print(f"Comparator pool loaded: {len(comp):,} patients")
 
