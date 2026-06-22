@@ -103,8 +103,18 @@ for pid in ery_patients:
             erythromycin_route[pid] = ", ".join(routes)
 
 df["erythromycin_route"] = df["patient_id"].map(erythromycin_route)
-n_with_route = df["erythromycin_route"].notna().sum()
+
+# For erythromycin patients where route is still blank after matching,
+# the diagnostic confirmed route=nan in the source file itself - not a
+# matching failure. Label explicitly so blank doesn't get misread as
+# "we didn't check" in a publication context.
+ery_mask = df["prokinetic_after_closest_dx_1yr_drug"] == "erythromycin"
+df.loc[ery_mask & df["erythromycin_route"].isna(), "erythromycin_route"] = "not documented in source data"
+
+n_with_route = (ery_mask & (df["erythromycin_route"] != "not documented in source data")).sum()
+n_not_documented = (ery_mask & (df["erythromycin_route"] == "not documented in source data")).sum()
 print(f"Erythromycin patients with route identified: {n_with_route:,}/{len(ery_patients):,}")
+print(f"Erythromycin patients with route not documented in source: {n_not_documented:,}/{len(ery_patients):,}")
 
 def timing_label(row):
     if pd.isna(row["prokinetic_after_closest_dx_1yr_date"]):
