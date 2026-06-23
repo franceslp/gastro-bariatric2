@@ -33,7 +33,7 @@ import time
 import pandas as pd
 
 GCS_BASE        = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
-MEDICATION_FILE = f"{GCS_BASE}/medication.csv"
+MEDICATION_FILE = f"{GCS_BASE}/medication_drug.csv"
 DIAGNOSIS_FILE  = f"{GCS_BASE}/diagnosis.csv"
 
 COMPARATOR_CSV  = "comparator_pool_ready_for_PSM.csv"
