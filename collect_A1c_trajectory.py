@@ -97,12 +97,13 @@ print(f"\nScanning lab_result.csv (~178 GB, expect 90-120 min)...")
 
 # {pid: [(date, value), ...]}
 a1c_records = {}
+unparseable_dates = 0
 
 rows_seen = 0
 chunk_num = 0
 for chunk in stream_gcs_csv(LAB_FILE,
                               usecols=["patient_id", "code_system", "code",
-                                       "date", "value"]):
+                                       "date", "lab_result_num_val"]):
     chunk_num += 1
     rows_seen += len(chunk)
 
@@ -115,8 +116,15 @@ for chunk in stream_gcs_csv(LAB_FILE,
         a1c = chunk[(chunk["code_system"] == "LOINC") &
                     (chunk["code"].isin(A1C_LOINC_CODES))].copy()
         if not a1c.empty:
+            # One-time sample of raw date values to confirm format
+            if chunk_num == 1:
+                print(f"  Date format sample from first A1c chunk: {a1c['date'].head(5).tolist()}")
+            # No explicit format - handles YYYYMMDD, YYYY-MM-DD, and timestamps
             a1c["date"] = pd.to_datetime(a1c["date"], errors="coerce")
-            a1c["value"] = pd.to_numeric(a1c["value"], errors="coerce")
+            n_bad_dates = a1c["date"].isna().sum()
+            if n_bad_dates > 0:
+                unparseable_dates += n_bad_dates
+            a1c["value"] = pd.to_numeric(a1c["lab_result_num_val"], errors="coerce")
             a1c = a1c[a1c["date"].notna() & a1c["value"].notna()]
             a1c = a1c[(a1c["value"] >= A1C_MIN) & (a1c["value"] <= A1C_MAX)]
             if not a1c.empty:
@@ -133,6 +141,7 @@ for chunk in stream_gcs_csv(LAB_FILE,
 print(f"\n  done - scanned {rows_seen:,} rows in "
       f"{(time.time()-SCRIPT_START_TIME)/60:.1f} minutes")
 print(f"  Patients with any A1c: {len(a1c_records):,}/{len(all_ids):,}")
+print(f"  A1c rows with unparseable dates (should be 0 or very low): {unparseable_dates:,}")
 
 
 def assign_windows(pid, group_label, surgery_date):
