@@ -184,22 +184,9 @@ def stream_gcs_csv(path, usecols, chunksize=500_000):
 # ===========================================================================
 # Detect medication date and drug column names at runtime (nrows=0 only)
 # ===========================================================================
-print("\nChecking medication.csv header for date/drug column names...")
-_proc = subprocess.Popen(["gsutil", "cat", MEDICATION_FILE], stdout=subprocess.PIPE)
-med_header = pd.read_csv(_proc.stdout, nrows=1, dtype=str)
-_proc.stdout.close()
-_proc.wait()
-
-date_col = None
-for candidate in ["start_date", "medication_date", "rx_start_date", "order_date", "date"]:
-    if candidate in med_header.columns:
-        date_col = candidate
-        break
-if date_col is None:
-    raise ValueError(f"No recognised date column in medication.csv. Columns: {list(med_header.columns)}")
-print(f"  Using date column: '{date_col}'")
-drug_col = "drug_name" if "drug_name" in med_header.columns else "medication_name"
-print(f"  Using drug column: '{drug_col}'")
+date_col = "start_date"
+drug_col = "drug_name"
+print(f"Using medication date column: '{date_col}', drug column: '{drug_col}'")
 
 # ===========================================================================
 # PASS 1 — medication.csv
