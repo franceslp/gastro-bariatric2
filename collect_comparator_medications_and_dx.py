@@ -186,7 +186,7 @@ def stream_gcs_csv(path, usecols, chunksize=500_000):
 # ===========================================================================
 print("\nChecking medication.csv header for date/drug column names...")
 _proc = subprocess.Popen(["gsutil", "cat", MEDICATION_FILE], stdout=subprocess.PIPE)
-med_header = pd.read_csv(_proc.stdout, nrows=0)
+med_header = pd.read_csv(_proc.stdout, nrows=1, dtype=str)
 _proc.stdout.close()
 _proc.wait()
 
