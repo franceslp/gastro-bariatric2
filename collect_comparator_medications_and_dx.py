@@ -1,33 +1,32 @@
 """
 collect_comparator_medications_and_dx.py
 
-Collects 12 PSM covariates for the comparator pool:
+Collects 12 PSM covariates for the comparator pool using IDENTICAL
+methodology to bariatric_step5_covariates.py (GP cohort source):
+
+  Source: medication_ingredient.csv + RxNorm ingredient codes
+  Window: lifetime pre-op (start_date < bariatric_date) — same as GP cohort
+
   Medications (9): metformin, any_insulin, rapid_insulin, long_insulin,
                    glp1, sglt2, dpp4, sulfonylurea, tzd
   DM complications (2): dm_circulatory, dm_other
   Comorbidity (1): dyslipidemia
-
-Source files:
-  medication_drug.csv  — brand column used for drug matching
-  diagnosis.csv        — ICD-10-CM codes
-
-Window: strictly BEFORE bariatric_date.
 """
 
-import re
 import subprocess
 import time
 import pandas as pd
+from collections import defaultdict
 
 GCS_BASE        = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
-MEDICATION_FILE = f"{GCS_BASE}/medication_drug.csv"
+MEDICATION_FILE = f"{GCS_BASE}/medication_ingredient.csv"
 DIAGNOSIS_FILE  = f"{GCS_BASE}/diagnosis.csv"
 
 COMPARATOR_CSV = "comparator_pool_ready_for_PSM.csv"
 GP_COVARIATES  = "study_covariates.csv"
 OUTPUT_CSV     = "psm_covariates_comparator_meds_dx.csv"
 
-print(">>> SCRIPT VERSION: collect_comparator_medications_and_dx_v4 <<<")
+print(">>> SCRIPT VERSION: collect_comparator_medications_and_dx_v5 <<<")
 
 # ---------------------------------------------------------------------------
 # Load comparator pool
@@ -41,85 +40,27 @@ surgery_lookup = dict(zip(comp["patient_id"], comp["surgery_dt"]))
 comp_ids = set(comp["patient_id"].dropna())
 print(f"Comparator patients: {len(comp_ids):,}")
 
-# medication_drug.csv columns: patient_id, start_date, brand
-DATE_COL = "start_date"
-DRUG_COL = "brand"
-print(f"Medication file: {MEDICATION_FILE}")
-print(f"Date column: '{DATE_COL}' | Drug column: '{DRUG_COL}'")
-
 # ---------------------------------------------------------------------------
-# Medication patterns — brand name matching, includes combination products
-# re.escape() used for safe regex
+# RxNorm ingredient codes — IDENTICAL to bariatric_step5_covariates.py
 # ---------------------------------------------------------------------------
-MED_PATTERNS = {
-    "metformin": [
-        "metformin", "glucophage", "glumetza", "fortamet", "riomet",
-        "janumet",    # metformin + sitagliptin
-        "kombiglyze", # metformin + saxagliptin
-        "kazano",     # metformin + alogliptin
-        "jentadueto", # metformin + linagliptin
-        "xigduo",     # metformin + dapagliflozin
-        "synjardy",   # metformin + empagliflozin
-        "invokamet",  # metformin + canagliflozin
-        "segluromet", # metformin + ertugliflozin
-        "trijardy",   # metformin + empagliflozin + linagliptin
-        "qternmet",   # metformin + dapagliflozin + saxagliptin
-        "glucovance", # metformin + glyburide
-        "metaglip",   # metformin + glipizide
-        "avandamet",  # metformin + rosiglitazone
-        "actoplus",   # metformin + pioglitazone
-        # NOTE: glyxambi (empagliflozin+linagliptin) has NO metformin — not here
-    ],
-    "rapid_insulin": [
-        "insulin lispro", "insulin aspart", "insulin glulisine",
-        "humalog", "novolog", "novorapid", "apidra",
-        "admelog", "lyumjev", "fiasp",
-    ],
-    "long_insulin": [
-        "insulin glargine", "insulin detemir", "insulin degludec",
-        "lantus", "basaglar", "toujeo", "semglee", "rezvoglar",
-        "levemir", "tresiba",
-    ],
-    "glp1": [
-        "semaglutide", "liraglutide", "dulaglutide", "exenatide",
-        "albiglutide", "lixisenatide", "tirzepatide",
-        "ozempic", "wegovy", "rybelsus",
-        "victoza", "saxenda", "trulicity",
-        "byetta", "bydureon", "tanzeum", "adlyxin", "mounjaro",
-        "xultophy", "soliqua",
-    ],
-    "sglt2": [
-        "empagliflozin", "dapagliflozin", "canagliflozin", "ertugliflozin",
-        "jardiance", "farxiga", "forxiga", "invokana", "steglatro",
-        "glyxambi",   # empagliflozin + linagliptin
-        "qtern",      # dapagliflozin + saxagliptin
-        "steglujan",  # ertugliflozin + sitagliptin
-    ],
-    "dpp4": [
-        "sitagliptin", "saxagliptin", "alogliptin", "linagliptin", "vildagliptin",
-        "januvia", "onglyza", "nesina", "tradjenta", "galvus",
-    ],
-    "sulfonylurea": [
-        "glipizide", "glyburide", "glimepiride", "glibenclamide",
-        "chlorpropamide", "tolbutamide", "tolazamide",
-        "glucotrol", "diabeta", "micronase", "glynase", "amaryl",
-    ],
-    "tzd": [
-        "pioglitazone", "rosiglitazone",
-        "actos", "avandia",
-        "duetact",   # pioglitazone + glimepiride
-        "avandaryl", # rosiglitazone + glimepiride
-        "oseni",     # pioglitazone + alogliptin
-    ],
+MED_CODES = {
+    "metformin":     {"6809"},
+    "rapid_insulin": {"51428", "86009", "311036", "1156706"},
+    "long_insulin":  {"253182", "274783", "1151131", "2200801"},
+    "glp1":          {"60548", "475968", "2200644", "1991302", "1440051"},
+    "sglt2":         {"1488574", "1545653", "1602111", "1932591"},
+    "dpp4":          {"593411", "593533", "1100699", "884220"},
+    "sulfonylurea":  {"4815", "4821", "25789"},
+    "tzd":           {"33738", "84108"},
 }
-
-MED_REGEX = {
-    key: re.compile("|".join(map(re.escape, patterns)), re.IGNORECASE)
-    for key, patterns in MED_PATTERNS.items()
-}
+# Build reverse lookup: code -> drug class
+code_to_class = {}
+for drug_class, codes in MED_CODES.items():
+    for code in codes:
+        code_to_class[code] = drug_class
 
 # ---------------------------------------------------------------------------
-# Diagnosis patterns — dm_other excludes E10.9/E11.9 (near-universal, useless)
+# Diagnosis patterns — dm_other excludes E10.9/E11.9 (near-universal)
 # ---------------------------------------------------------------------------
 DX_PATTERNS = {
     "dm_circulatory": [
@@ -128,8 +69,8 @@ DX_PATTERNS = {
         "E11.51", "E11.52", "E11.59",
     ],
     "dm_other": [
-        "E10.6", "E11.6",  # DM with other specified complications
-        "E10.8", "E11.8",  # DM with unspecified complications
+        "E10.6", "E11.6",
+        "E10.8", "E11.8",
     ],
     "dyslipidemia": ["E78"],
 }
@@ -137,8 +78,8 @@ DX_PATTERNS = {
 # ---------------------------------------------------------------------------
 # Initialise result dicts
 # ---------------------------------------------------------------------------
-med_flags = {pid: {k: 0 for k in MED_PATTERNS} for pid in comp_ids}
-dx_flags  = {pid: {k: 0 for k in DX_PATTERNS}  for pid in comp_ids}
+med_flags = {pid: defaultdict(int) for pid in comp_ids}
+dx_flags  = {pid: {k: 0 for k in DX_PATTERNS} for pid in comp_ids}
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -154,16 +95,27 @@ def stream_gcs_csv(path, usecols, chunksize=500_000):
         proc.stdout.close()
         proc.wait()
 
+def parse_date_col(series):
+    """Handle both YYYYMMDD and ISO date formats."""
+    series = series.fillna("").astype(str)
+    result = pd.to_datetime(series, format="%Y%m%d", errors="coerce")
+    mask = result.isna() & (series.str.strip() != "")
+    if mask.any():
+        result.loc[mask] = pd.to_datetime(
+            series.loc[mask], format="mixed", dayfirst=False, errors="coerce"
+        )
+    return result
+
 # ===========================================================================
-# PASS 1 — medication_drug.csv
+# PASS 1 — medication_ingredient.csv (RxNorm codes)
 # ===========================================================================
-print("\n--- PASS 1: medication_drug.csv ---")
+print("\n--- PASS 1: medication_ingredient.csv (RxNorm ingredient codes) ---")
 t0 = time.time()
 rows_seen = chunk_num = 0
 
 for chunk in stream_gcs_csv(
     MEDICATION_FILE,
-    usecols=["patient_id", DATE_COL, DRUG_COL],
+    usecols=["patient_id", "code", "start_date"],
 ):
     chunk_num += 1
     rows_seen += len(chunk)
@@ -172,23 +124,29 @@ for chunk in stream_gcs_csv(
     if chunk.empty:
         continue
 
-    chunk[DATE_COL] = pd.to_datetime(chunk[DATE_COL], errors="coerce")
-    chunk["drug_lower"] = chunk[DRUG_COL].str.lower().fillna("")
-    chunk["surgery_dt"] = chunk["patient_id"].map(surgery_lookup)
-    chunk = chunk[chunk[DATE_COL] < chunk["surgery_dt"]]
+    # Keep only relevant RxNorm codes
+    chunk = chunk[chunk["code"].isin(code_to_class)]
     if chunk.empty:
         continue
 
-    for drug_key, regex in MED_REGEX.items():
-        mask = chunk["drug_lower"].str.contains(regex, na=False)
-        for pid in chunk.loc[mask, "patient_id"].unique():
-            med_flags[pid][drug_key] = 1
+    chunk["start_date"] = parse_date_col(chunk["start_date"])
+    chunk["surgery_dt"] = chunk["patient_id"].map(surgery_lookup)
+
+    # Lifetime pre-op use (start_date < surgery_date) — same as GP cohort
+    chunk = chunk[chunk["start_date"] < chunk["surgery_dt"]]
+    if chunk.empty:
+        continue
+
+    for _, row in chunk.iterrows():
+        drug_class = code_to_class.get(row["code"])
+        if drug_class:
+            med_flags[row["patient_id"]][drug_class] = 1
 
     if chunk_num % 50 == 0:
         elapsed = (time.time() - t0) / 60
         print(f"  ...{rows_seen:,} rows | {elapsed:.1f} min")
 
-print(f"Done medication_drug.csv: {rows_seen:,} rows in {(time.time()-t0)/60:.1f} min")
+print(f"Done medication_ingredient.csv: {rows_seen:,} rows in {(time.time()-t0)/60:.1f} min")
 
 # ===========================================================================
 # PASS 2 — diagnosis.csv
