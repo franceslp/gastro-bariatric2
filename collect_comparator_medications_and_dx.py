@@ -26,7 +26,7 @@ COMPARATOR_CSV = "comparator_pool_ready_for_PSM.csv"
 GP_COVARIATES  = "study_covariates.csv"
 OUTPUT_CSV     = "psm_covariates_comparator_meds_dx.csv"
 
-print(">>> SCRIPT VERSION: collect_comparator_medications_and_dx_v5 <<<")
+print(">>> SCRIPT VERSION: collect_comparator_medications_and_dx_v6 <<<")
 
 # ---------------------------------------------------------------------------
 # Load comparator pool
@@ -84,7 +84,7 @@ dx_flags  = {pid: {k: 0 for k in DX_PATTERNS} for pid in comp_ids}
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
-def stream_gcs_csv(path, usecols, chunksize=500_000):
+def stream_gcs_csv(path, usecols, chunksize=1_000_000):
     proc = subprocess.Popen(["gsutil", "cat", path], stdout=subprocess.PIPE)
     try:
         for chunk in pd.read_csv(
@@ -137,10 +137,10 @@ for chunk in stream_gcs_csv(
     if chunk.empty:
         continue
 
-    for _, row in chunk.iterrows():
-        drug_class = code_to_class.get(row["code"])
-        if drug_class:
-            med_flags[row["patient_id"]][drug_class] = 1
+    chunk["drug_class"] = chunk["code"].map(code_to_class)
+    chunk = chunk[chunk["drug_class"].notna()]
+    for pid, drug_class in zip(chunk["patient_id"], chunk["drug_class"]):
+        med_flags[pid][drug_class] = 1
 
     if chunk_num % 50 == 0:
         elapsed = (time.time() - t0) / 60
