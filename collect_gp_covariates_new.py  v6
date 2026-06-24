@@ -40,10 +40,11 @@ GCS PASSES (~3 hours total):
 
 import subprocess
 import time
+import os
 from collections import defaultdict
 import pandas as pd
 
-print(">>> SCRIPT VERSION: collect_gp_covariates_new_v6 <<<")
+print(">>> SCRIPT VERSION: collect_gp_covariates_new_v7 <<<")
 
 # ---------------------------------------------------------------------------
 # Config
@@ -61,24 +62,26 @@ CHUNK_SIZE  = 500_000
 
 # ---------------------------------------------------------------------------
 # ICD-10-CM code definitions — matched exactly to Sadda eTable 1
+# Codes stored WITHOUT dots (normalization applied during streaming)
+# e.g. "E102" matches E10.2, E10.20, E10.21, E10.29 etc.
 # ---------------------------------------------------------------------------
 DX_CODES = {
     # DM complications (Sadda eTable 1)
-    "dm_renal":      ["E10.2", "E11.2"],         # Sadda: E10.2, E11.2 prefixes
-    "dm_neuro":      ["E10.4", "E11.4"],         # Sadda: listed as "Neurologic" in eTable 2
-    "dm_circ":       ["E10.5", "E11.5"],         # Sadda: E11.5 (typo in paper — means E10.5+E11.5)
-    "dm_opthal":     ["E10.3", "E11.3"],         # Sadda: E10.3, E11.3 prefixes
-    "dm_other":      ["E10.6", "E11.6"],         # Sadda: E10.6, E11.6 only (NOT E10.8/E11.8)
-    # Diabetes type (Sadda eTable 1) — separate binary flags, no categorical
+    "dm_renal":      ["E102", "E112"],
+    "dm_neuro":      ["E104", "E114"],
+    "dm_circ":       ["E105", "E115"],
+    "dm_opthal":     ["E103", "E113"],
+    "dm_other":      ["E106", "E116"],   # E10.6/E11.6 only per Sadda
+    # Diabetes type — separate binary flags per Sadda eTable 2
     "t1dm":          ["E10"],
     "t2dm":          ["E11"],
-    # Comorbidities (Sadda eTable 1 — exact codes)
+    # Comorbidities (Sadda eTable 1 — exact codes, dot-free)
     "dyslipidemia":  ["E78"],
     "ckd":           ["N18"],
     "heart_failure": ["I50"],
-    "hypertension":  ["I10"],       # Sadda: I10 only (not I10-I15)
-    "cad":           ["I25.1"],     # Sadda: I25.1 specifically (atherosclerotic heart disease)
-    "stroke":        ["I63"],       # Sadda: I63 only (cerebral infarction, not I63-I69)
+    "hypertension":  ["I10"],            # Sadda: I10 only
+    "cad":           ["I251"],           # Sadda: I25.1 → dot-free = I251
+    "stroke":        ["I63"],            # Sadda: I63 only
 }
 
 # ---------------------------------------------------------------------------
@@ -117,6 +120,7 @@ surgery_lookup = dict(zip(cohort["patient_id"], cohort["bariatric_date"]))
 assert cohort["bariatric_date"].notna().all(), \
     "Missing surgery dates in cohort — cannot compute windows"
 cohort_ids = set(cohort["patient_id"].dropna())
+assert len(cohort_ids) > 0, "Cohort is empty — check funnel_6_new.csv"
 
 print(f"New GP cohort: {len(cohort_ids):,} patients")
 print(f"Input:  {COHORT_CSV}")
@@ -177,8 +181,12 @@ for chunk in stream_gcs_csv(
         continue
 
     icd["code"] = icd["code"].str.strip()
+    # Normalize ICD format: remove dots for consistent prefix matching
+    # e.g. I25.1 and I251 both match correctly after normalization
+    icd["code"] = icd["code"].str.replace(".", "", regex=False)
     icd["date"] = parse_dates(icd["date"])
     icd["surgery_dt"] = icd["patient_id"].map(surgery_lookup)
+    icd = icd[icd["surgery_dt"].notna()]  # guard against missing surgery dates
 
     # Vectorised window filter: 1-365 days before surgery
     icd["diff"] = (icd["surgery_dt"] - icd["date"]).dt.days
@@ -231,6 +239,7 @@ for chunk in stream_gcs_csv(
     chunk["date"]       = parse_dates(chunk["date"])
     chunk["result_num"] = pd.to_numeric(chunk["result_num"], errors="coerce")
     chunk["surgery_dt"] = chunk["patient_id"].map(surgery_lookup)
+    chunk = chunk[chunk["surgery_dt"].notna()]  # guard against missing surgery dates
     chunk["diff"]       = (chunk["surgery_dt"] - chunk["date"]).dt.days
 
     # Vectorised window: 1-365 days before surgery
@@ -290,12 +299,15 @@ for chunk in stream_gcs_csv(
     if chunk.empty:
         continue
 
+    # Normalize code strings before matching (handles whitespace, type inconsistency)
+    chunk["code"] = chunk["code"].astype(str).str.strip()
     chunk = chunk[chunk["code"].isin(code_to_class)]
     if chunk.empty:
         continue
 
     chunk["start_date"] = parse_dates(chunk["start_date"])
     chunk["surgery_dt"] = chunk["patient_id"].map(surgery_lookup)
+    chunk = chunk[chunk["surgery_dt"].notna()]  # guard against missing surgery dates
 
     # FIX 3 — vectorised window filter
     chunk["diff"] = (chunk["surgery_dt"] - chunk["start_date"]).dt.days
@@ -404,6 +416,15 @@ print("NOTE: Medication exposure = any ingredient record 1-365 days before "
 # ---------------------------------------------------------------------------
 # QA
 # ---------------------------------------------------------------------------
+# Bug fix — flag_cols explicitly defined (missing = NameError crash)
+flag_cols = [
+    "t1dm", "t2dm",
+    "dm_renal", "dm_neuro", "dm_circ", "dm_opthal", "dm_other",
+    "dyslipidemia", "hypertension", "ckd", "heart_failure", "cad", "stroke",
+    "metformin", "rapid_insulin", "long_insulin", "any_insulin",
+    "glp1", "sglt2", "dpp4", "sulfonylurea", "tzd",
+]
+
 print(f"\nQA — {OUTPUT_CSV}:")
 print(f"  Rows: {len(out_df):,} | Cols: {len(out_df.columns)}")
 
@@ -419,15 +440,13 @@ if out_df["preoperative_bmi"].notna().any():
     print(f"  BMI range: {out_df['preoperative_bmi'].min():.1f} – "
           f"{out_df['preoperative_bmi'].max():.1f}")
 
-print(f"\n  Flag prevalence (t1dm and t2dm are separate binary flags — patients can have both):")
+print(f"\n  Flag prevalence (t1dm/t2dm are separate binary flags per Sadda):")
 for col in flag_cols:
     if col in out_df.columns:
         n_flag = out_df[col].sum()
         print(f"    {col:<20}: {n_flag:3d} ({n_flag/len(out_df)*100:.1f}%)")
 
 out_df.to_csv(OUTPUT_CSV, index=False)
-
-import os
 file_size_kb = os.path.getsize(OUTPUT_CSV) / 1024
 print(f"\nWrote {OUTPUT_CSV}")
 print(f"  Rows: {len(out_df):,} | Cols: {len(out_df.columns)} | "
