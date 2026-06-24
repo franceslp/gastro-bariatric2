@@ -1,5 +1,5 @@
 """
-build_new_funnel.py  v5
+build_new_funnel.py  
 
 FULL PIPELINE CONTEXT (for reproducibility):
   335,846 gastroparesis patients (K31.84 ever, any date)
