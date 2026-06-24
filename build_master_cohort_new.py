@@ -1,5 +1,5 @@
 """
-build_master_cohort_new.py  v2
+build_master_cohort_new.py  
 
 Step 2 of the revised pipeline.
 Reads funnel_6_new.csv (produced by build_new_funnel.py) and builds:
