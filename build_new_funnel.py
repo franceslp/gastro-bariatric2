@@ -111,7 +111,7 @@ print(f"  K31.84 same-day as surgery (days=0): {n_zero_k3184} "
 # Flag 3 — E10/E11 not within 1yr strictly before surgery
 # Hard assert — no silent fallback
 # ---------------------------------------------------------------------------
-E10E11_COL = "closest_E10_E11_date_before_surgery_v2"
+E10E11_COL = "closest_E10_E11_date_before_surgery"
 assert E10E11_COL in df.columns, (
     f"Required column '{E10E11_COL}' not found. "
     f"Available: {[c for c in df.columns if 'E10' in c or 'E11' in c]}"
