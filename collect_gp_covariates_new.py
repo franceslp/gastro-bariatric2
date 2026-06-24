@@ -1,5 +1,5 @@
 """
-collect_gp_covariates_new.py  v6
+collect_gp_covariates_new.py  
 
 Step 3 of the revised pipeline.
 Recollects all Sadda PSM covariates for the NEW GP final cohort
