@@ -51,8 +51,8 @@ print(f"Final cohort loaded: {len(funnel6):,} patients")
 ges_src = pd.read_csv("bariatric_patients_K3184_window_check.csv",
                       dtype={"patient_id": str},
                       usecols=["patient_id", "has_GES", "first_GES_date",
-                               "num_K31_84_encounters", "K3184_span_days",
-                               "all_K31_84_dates"])
+                               "num_K31_84_distinct_encounters",
+                               "days_between_first_and_last_K31_84"])
 
 print("Merging GES and K31.84 history...")
 df = funnel6.merge(ges_src, on="patient_id", how="left", suffixes=("", "_ges"))
@@ -92,7 +92,7 @@ df["days_GES_to_surgery"] = (
 ).dt.days
 
 # Resolve column duplication from merge
-for col in ["num_K31_84_encounters", "K3184_span_days", "all_K31_84_dates"]:
+for col in ["num_K31_84_distinct_encounters", "days_between_first_and_last_K31_84"]:
     ges_col = f"{col}_ges"
     if ges_col in df.columns:
         if col not in df.columns or df[col].isna().all():
