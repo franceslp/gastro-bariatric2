@@ -1,5 +1,5 @@
 """
-collect_gp_covariates_new.py  
+collect_gp_covariates_new.py  v6
 
 Step 3 of the revised pipeline.
 Recollects all Sadda PSM covariates for the NEW GP final cohort
@@ -44,7 +44,7 @@ import os
 from collections import defaultdict
 import pandas as pd
 
-print(">>> SCRIPT VERSION: collect_gp_covariates_new_v7 <<<")
+print(">>> SCRIPT VERSION: collect_gp_covariates_new_v8 <<<")
 
 # ---------------------------------------------------------------------------
 # Config
@@ -216,7 +216,7 @@ rows_seen = chunk_num = 0
 
 for chunk in stream_gcs_csv(
     LAB_FILE,
-    usecols=["patient_id", "code_system", "code", "date", "result_num"]
+    usecols=["patient_id", "code_system", "code", "date", "lab_result_num_val"]
 ):
     chunk_num += 1
     rows_seen += len(chunk)
@@ -237,27 +237,27 @@ for chunk in stream_gcs_csv(
         continue
 
     chunk["date"]       = parse_dates(chunk["date"])
-    chunk["result_num"] = pd.to_numeric(chunk["result_num"], errors="coerce")
+    chunk["lab_result_num_val"] = pd.to_numeric(chunk["lab_result_num_val"], errors="coerce")
     chunk["surgery_dt"] = chunk["patient_id"].map(surgery_lookup)
     chunk = chunk[chunk["surgery_dt"].notna()]  # guard against missing surgery dates
     chunk["diff"]       = (chunk["surgery_dt"] - chunk["date"]).dt.days
 
     # Vectorised window: 1-365 days before surgery
     chunk = chunk[(chunk["diff"] >= 1) & (chunk["diff"] <= WINDOW_DAYS)]
-    chunk = chunk[chunk["result_num"].notna()]
+    chunk = chunk[chunk["lab_result_num_val"].notna()]
     if chunk.empty:
         continue
 
     # A1c plausibility filter
     a1c_rows = chunk[chunk["code"].isin(A1C_LOINC)].copy()
     a1c_rows = a1c_rows[
-        (a1c_rows["result_num"] >= 2) & (a1c_rows["result_num"] <= 20)
+        (a1c_rows["lab_result_num_val"] >= 2) & (a1c_rows["lab_result_num_val"] <= 20)
     ]
 
     # BMI plausibility filter
     bmi_rows = chunk[chunk["code"].isin(BMI_LOINC)].copy()
     bmi_rows = bmi_rows[
-        (bmi_rows["result_num"] >= 10) & (bmi_rows["result_num"] <= 100)
+        (bmi_rows["lab_result_num_val"] >= 10) & (bmi_rows["lab_result_num_val"] <= 100)
     ]
 
     # FIX 4 — sort by date descending, take most recent calendar date
@@ -266,14 +266,14 @@ for chunk in stream_gcs_csv(
         best = grp.sort_values("date", ascending=False).iloc[0]
         existing_dt = lab_vals[pid]["a1c_date"]
         if existing_dt is None or best["date"] > existing_dt:
-            lab_vals[pid]["a1c"]      = best["result_num"]
+            lab_vals[pid]["a1c"]      = best["lab_result_num_val"]
             lab_vals[pid]["a1c_date"] = best["date"]
 
     for pid, grp in bmi_rows.groupby("patient_id"):
         best = grp.sort_values("date", ascending=False).iloc[0]
         existing_dt = lab_vals[pid]["bmi_date"]
         if existing_dt is None or best["date"] > existing_dt:
-            lab_vals[pid]["bmi"]      = best["result_num"]
+            lab_vals[pid]["bmi"]      = best["lab_result_num_val"]
             lab_vals[pid]["bmi_date"] = best["date"]
 
     if chunk_num % 50 == 0:
