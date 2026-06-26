@@ -36,8 +36,8 @@ GCS_BASE       = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspeps
 PATIENT_FILE   = f"{GCS_BASE}/patient.csv"
 DIAGNOSIS_FILE = f"{GCS_BASE}/diagnosis.csv"
 
-COMPARATOR_CSV  = "comparator_pool_ready_for_PSM.csv"
-GP_COHORT_CSV   = "funnel_6_final_cohort.csv"   # for GP race/eth encoding QA
+COMPARATOR_CSV  = "comparator_pool_raw.csv"
+GP_COHORT_CSV   = "cohort_FINAL_analytic.csv"
 OUTPUT_CSV      = "psm_covariates_comparator_demographics.csv"
 
 print(">>> SCRIPT VERSION: collect_comparator_demographics_v2 <<<")
