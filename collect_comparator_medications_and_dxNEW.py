@@ -34,7 +34,7 @@ GCS_BASE        = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspep
 MEDICATION_FILE = f"{GCS_BASE}/medication_ingredient.csv"
 DIAGNOSIS_FILE  = f"{GCS_BASE}/diagnosis.csv"
 
-COMPARATOR_CSV = "comparator_pool_ready_for_PSM.csv"
+COMPARATOR_CSV = "comparator_pool_raw.csv"
 GP_COVARIATES  = "study_covariates_new.csv"   # compare against new GP covariates
 OUTPUT_CSV     = "psm_covariates_comparator_meds_dx.csv"
 
