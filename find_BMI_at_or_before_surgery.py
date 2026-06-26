@@ -24,8 +24,8 @@ import pandas as pd
 GCS_BASE = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
 VITALS_FILE = f"{GCS_BASE}/vitals_signs.csv"
 
-GP_CSV = "funnel_6_final_cohort.csv"
-COMPARATOR_CSV = "comparator_pool_ready_for_PSM.csv"  # Stage 3 output - final cleaned pool only
+GP_CSV = "cohort_FINAL_analytic.csv"
+COMPARATOR_CSV = "comparator_pool_raw.csv"
 
 GP_OUTPUT = "gastroparesis_cohort_BMI_at_or_before_surgery.csv"
 COMPARATOR_OUTPUT = "comparator_pool_ready_for_PSM_with_BMI.csv"
