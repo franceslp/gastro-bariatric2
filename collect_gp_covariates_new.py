@@ -54,7 +54,7 @@ DIAG_FILE = f"{BUCKET}/diagnosis.csv"
 LAB_FILE  = f"{BUCKET}/lab_result.csv"
 MED_FILE  = f"{BUCKET}/medication_ingredient.csv"
 
-COHORT_CSV  = "funnel_6_new.csv"
+COHORT_CSV  = "cohort_FINAL_analytic.csv"
 OUTPUT_CSV  = "study_covariates_new.csv"
 
 WINDOW_DAYS = 365
