@@ -25,8 +25,8 @@ import pandas as pd
 GCS_BASE = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
 LAB_FILE = f"{GCS_BASE}/lab_result.csv"
 
-GP_CSV = "funnel_6_final_cohort.csv"
-COMPARATOR_CSV = "comparator_pool_ready_for_PSM.csv"
+GP_CSV = "cohort_FINAL_analytic.csv"
+COMPARATOR_CSV = "comparator_pool_raw.csv"
 OUTPUT_CSV = "psm_covariates_labs.csv"
 
 LOOKBACK_DAYS = 365
