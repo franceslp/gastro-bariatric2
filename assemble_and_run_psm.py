@@ -11,7 +11,7 @@ Methodology (per Sadda et al. JAMA Surgery 2026):
   - Balance assessed via standardized mean differences (SMD < 0.1)
 
 INPUTS (GP cohort):
-  funnel_6_new.csv
+  cohort_FINAL_analytic.csv
   study_covariates_new.csv
   psm_covariates_true_diabetes_duration.csv
 
@@ -44,7 +44,7 @@ print(">>> SCRIPT VERSION: assemble_and_run_psm_v1 <<<")
 # ---------------------------------------------------------------------------
 # Patient IDs to exclude from GP cohort (pending PI confirmation)
 # Set to empty list [] if PI says keep them
-EXCLUDE_GP_AMBIGUOUS_CPT = ["Fx#F", "HQ_BC", "Qx4aE", "wwl9"]
+EXCLUDE_GP_AMBIGUOUS_CPT = []  # exclusions already applied in step5_multisurgery_exclusion.py
 
 # Comparator patients with post-surgical diabetes (invalid — exclude always)
 INVALID_COMP_FILE = "psm_covariates_true_diabetes_duration.csv"
@@ -85,7 +85,7 @@ def smd_table(gp_df, comp_df, covariates):
 # ===========================================================================
 print("\n--- Building GP covariate matrix ---")
 
-gp_base = pd.read_csv("funnel_6_new.csv", dtype={"patient_id": str})
+gp_base = pd.read_csv("cohort_FINAL_analytic.csv", dtype={"patient_id": str})
 gp_cov  = pd.read_csv("study_covariates_new.csv", dtype={"patient_id": str})
 gp_dur  = pd.read_csv("psm_covariates_true_diabetes_duration.csv",
                       dtype={"patient_id": str})
@@ -107,7 +107,7 @@ gp_base["ethnicity_hispanic"] = eth_lower.str.contains("hispanic|latino|spanish"
 # sleeve_vs_bypass: bypass takes precedence when both codes present
 # 43775 only → 1 (sleeve)
 # any bypass code (43644/43645/43846/43847), with or without 43775 → 0 (bypass)
-# This handles the 4 ambiguous patients correctly as bypass
+# Bypass precedence: any bypass code wins over sleeve. Ambiguous patients already excluded in step5_multisurgery_exclusion.py (EXCLUDE_GP_AMBIGUOUS_CPT=[])
 cpt = gp_base["bariatric_cpt_codes_seen"].astype(str).str.replace(r"\.0","",regex=True)
 gp_base["sleeve_vs_bypass"] = np.where(
     cpt.str.contains("43644|43645|43846|43847", regex=True, na=False),
@@ -171,7 +171,7 @@ comp_dur   = gp_dur[gp_dur["group"] == "comparator"][
      "diabetes_duration_winsorized_days"]
 ]
 
-# Remove 216 invalid comparators (post-surgical diabetes)
+# Remove invalid comparators with diabetes diagnosed only after surgery (negative duration)
 dur_all = pd.read_csv(INVALID_COMP_FILE, dtype={"patient_id": str})
 invalid_comp = set(
     dur_all.loc[
