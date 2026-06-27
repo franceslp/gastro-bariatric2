@@ -65,12 +65,32 @@ for chunk in stream(PATIENT_FILE, usecols=["patient_id", sex_col]):
             sex_lookup[pid] = sx
 print(f"Scanned {rows:,} patient rows; found sex for {len(sex_lookup):,}/{len(comp_ids):,}")
 
+import numpy as np
 out = pd.DataFrame({"patient_id": list(comp_ids)})
 out["sex_raw"] = out["patient_id"].map(sex_lookup)
-out["sex_encoded"] = (out["sex_raw"].astype(str).str.upper().str[0] == "F").astype(int)
+
+# Encode F=1, M=0, but PRESERVE missing as NaN (do not silently code missing as male).
+# Missing-sex patients will be dropped in complete-case analysis like any other
+# missing covariate.
+def encode_sex(v):
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return np.nan
+    s = str(v).strip().upper()
+    if s == "" or s in ("NAN", "NONE", "UNKNOWN", "U"):
+        return np.nan
+    if s[0] == "F":
+        return 1
+    if s[0] == "M":
+        return 0
+    return np.nan
+
+out["sex_encoded"] = out["sex_raw"].map(encode_sex)
 
 # QA
-print(f"sex_encoded F(1): {out['sex_encoded'].sum()} ({100*out['sex_encoded'].mean():.1f}%)")
-print(f"missing sex: {out['sex_raw'].isna().sum()}")
+n_missing = out["sex_encoded"].isna().sum()
+n_f = (out["sex_encoded"] == 1).sum()
+n_m = (out["sex_encoded"] == 0).sum()
+print(f"sex_encoded F(1): {n_f} | M(0): {n_m} | missing(NaN): {n_missing}")
+print(f"F% of non-missing: {100*n_f/(n_f+n_m):.1f}%")
 out[["patient_id", "sex_encoded"]].to_csv(OUTPUT_CSV, index=False)
 print(f"Wrote {OUTPUT_CSV}: {len(out)} rows")
