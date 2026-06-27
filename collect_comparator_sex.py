@@ -40,12 +40,14 @@ import io
 head = subprocess.run(["gsutil", "cat", PATIENT_FILE], stdout=subprocess.PIPE)
 # read just header via a quick separate small read
 proc = subprocess.Popen(["gsutil", "cat", PATIENT_FILE], stdout=subprocess.PIPE)
-header = proc.stdout.readline().decode().strip().split(",")
+header_raw = proc.stdout.readline().decode().strip().split(",")
 proc.stdout.close(); proc.wait()
+# Strip surrounding quotes/whitespace — patient.csv uses quoted headers
+header = [h.strip().strip('"').strip("'") for h in header_raw]
 print(f"patient.csv columns: {header}")
 
 sex_col = None
-for cand in ["sex", "gender", "sex_at_birth", "Sex", "Gender"]:
+for cand in ["sex", "gender", "sex_at_birth"]:
     if cand in header:
         sex_col = cand
         break
