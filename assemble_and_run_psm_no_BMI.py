@@ -204,7 +204,11 @@ print(f"Removed {before - len(comp_base)} invalid comparators "
       f"(post-surgical diabetes) → n={len(comp_base)}")
 
 # Encode comparator demographics
-comp_base["sex_encoded"] = (comp_base["sex"].str.upper() == "F").astype(int)
+# sex was not collected by collect_comparator_demographics.py; pull it from
+# the dedicated comparator_sex.csv (collect_comparator_sex.py scans patient.csv)
+comp_sex = pd.read_csv("comparator_sex.csv", dtype={"patient_id": str})
+comp_base = comp_base.merge(comp_sex[["patient_id", "sex_encoded"]],
+                            on="patient_id", how="left")
 comp_base["surgery_year"] = pd.to_datetime(
     comp_base["bariatric_date"], errors="coerce"
 ).dt.year
