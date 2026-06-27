@@ -42,8 +42,10 @@ existing validated BMI files). Point the PSM script at these after confirming
 the validation report looks good.
 """
 import subprocess
+import warnings
 import numpy as np
 import pandas as pd
+warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
 
 GCS_BASE = "gs://test-skynet-lh/joseph-sujka/trinetx-gastroparesis-dyspepsia"
 VITALS_FILE = f"{GCS_BASE}/vitals_signs.csv"
@@ -103,7 +105,7 @@ rows = 0
 for chunk in stream(VITALS_FILE,
                     ["patient_id", "code_system", "code", "date", "value", "units_of_measure"]):
     rows += len(chunk)
-    chunk = chunk[chunk["patient_id"].isin(all_ids)]
+    chunk = chunk[chunk["patient_id"].isin(all_ids)].copy()
     if chunk.empty:
         continue
     chunk["code"] = chunk["code"].str.strip()
