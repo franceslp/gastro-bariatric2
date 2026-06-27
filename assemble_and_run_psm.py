@@ -132,13 +132,22 @@ gp = gp_base[["patient_id", "age_at_surgery_approx", "sex_encoded",
                "race_white", "race_black", "ethnicity_hispanic",
                "sleeve_vs_bypass", "surgery_year"]].copy()
 gp = gp.merge(gp_cov[[
-    "patient_id", "baseline_a1c", "preoperative_bmi",
+    "patient_id", "baseline_a1c",
     "t1dm", "t2dm",
     "dm_renal", "dm_neuro", "dm_circ", "dm_opthal", "dm_other",
     "hypertension", "ckd", "cad", "stroke", "heart_failure", "dyslipidemia",
     "metformin", "any_insulin", "rapid_insulin", "long_insulin",
     "glp1", "sglt2", "dpp4", "sulfonylurea", "tzd",
 ]], on="patient_id", how="left")
+
+# GP BMI from vitals-based file (study_covariates_new.csv BMI is 100% missing —
+# it scanned lab_result.csv instead of vitals_signs.csv. The dedicated BMI
+# script find_BMI_at_or_before_surgery.py correctly reads vitals.)
+gp_bmi = pd.read_csv("gastroparesis_cohort_BMI_at_or_before_surgery.csv",
+                     dtype={"patient_id": str},
+                     usecols=["patient_id", "BMI_at_or_before_surgery"])
+gp_bmi = gp_bmi.rename(columns={"BMI_at_or_before_surgery": "preoperative_bmi"})
+gp = gp.merge(gp_bmi, on="patient_id", how="left")
 
 gp_dur_gp = gp_dur[gp_dur["group"] == "gastroparesis"][
     ["patient_id", "diabetes_duration_days", "diabetes_duration_log1p",
