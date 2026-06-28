@@ -205,18 +205,34 @@ for cname, fname in COHORTS.items():
         # Categorical year tests whether the PATTERN over time differs by group.
         md["year_cat"] = md["year"].astype("category")
         try:
-            # PRIMARY model: random INTERCEPT by patient (well-identified, no
-            # singularity). A random-slope model was explored but its slope
-            # variance was singular (patients do not vary enough in rate of
-            # change to estimate it reliably), so the parsimonious random-
-            # intercept model is used for primary inference.
-            import warnings as _w
-            model = smf.mixedlm("a1c ~ group_bin * C(year_cat)", md,
-                                groups=md["patient_id"])
-            fit = model.fit(method="lbfgs", disp=False)
-            report_lines.append(f"\n  [random-intercept model used "
-                               f"(random-slope was singular)]")
-            # Issue 2: confidence intervals for each term
+            # PRIMARY model: linear mixed-effects with random intercept by patient.
+            # If the random-effect covariance is singular (random-intercept variance
+            # estimated ~0), MixedLM inference is unreliable, so we fall back to OLS
+            # with cluster-robust SE by patient — same fixed-effect interaction
+            # inference, robust to the within-patient correlation, no singularity.
+            import statsmodels.formula.api as smf_ols
+            fit = None
+            use_mixed = False
+            try:
+                model = smf.mixedlm("a1c ~ group_bin * C(year_cat)", md,
+                                    groups=md["patient_id"])
+                cand = model.fit(method="lbfgs", disp=False)
+                # accept only if random-effect variance is well-identified
+                grp_var = float(cand.cov_re.iloc[0, 0]) if cand.cov_re.size else 0.0
+                _ = cand.conf_int()  # will raise if singular
+                if grp_var > 1e-6:
+                    fit = cand
+                    use_mixed = True
+            except Exception:
+                fit = None
+            if fit is None:
+                fit = smf_ols.ols("a1c ~ group_bin * C(year_cat)", md).fit(
+                    cov_type="cluster", cov_kwds={"groups": md["patient_id"]})
+            method_label = ("random-intercept mixed model" if use_mixed
+                            else "OLS with cluster-robust SE by patient "
+                                 "(random-intercept variance was singular)")
+            report_lines.append(f"\n  [{method_label}]")
+
             ci = fit.conf_int()
             for param in fit.params.index:
                 lo = ci.loc[param, 0] if param in ci.index else np.nan
@@ -228,19 +244,16 @@ for cname, fname in COHORTS.items():
                     "ci_lo": round(lo, 4), "ci_hi": round(hi, 4),
                     "p_value": round(fit.pvalues[param], 4),
                 })
-            # Categorical year -> multiple interaction terms (one per year level).
-            # Report each; a significant term means GP vs comp differs at that year.
             inter_terms = [t for t in fit.pvalues.index if "group_bin:" in t]
-            report_lines.append(f"\nPRIMARY mixed-effects model (a1c ~ group * C(year) + (1|patient)):")
+            report_lines.append(f"\nPRIMARY model (a1c ~ group * C(year)):")
             report_lines.append(f"  group main effect (baseline group difference) p = "
                                f"{fit.pvalues.get('group_bin', np.nan):.4f}")
             report_lines.append(f"  group x year interaction terms:")
             report_lines.append(f"    (each tests whether the CHANGE FROM BASELINE differs")
             report_lines.append(f"     between groups at that follow-up year, vs Year 0 reference)")
-            ci_p = fit.conf_int()
             for t in inter_terms:
-                lo = ci_p.loc[t, 0] if t in ci_p.index else np.nan
-                hi = ci_p.loc[t, 1] if t in ci_p.index else np.nan
+                lo = ci.loc[t, 0] if t in ci.index else np.nan
+                hi = ci.loc[t, 1] if t in ci.index else np.nan
                 report_lines.append(f"    {t}: coef={fit.params[t]:+.3f} "
                                    f"[95%CI {lo:+.3f}, {hi:+.3f}], p={fit.pvalues[t]:.4f}")
                 mixed_rows.append({"cohort": cname, "model": "primary", "term": t,
