@@ -182,8 +182,10 @@ for cname, fname in COHORTS.items():
                                  md_adj, groups=md_adj["patient_id"])
                 cand = m1.fit(method="lbfgs", disp=False)
                 gv = float(cand.cov_re.iloc[0,0]) if cand.cov_re.size else 0.0
+                # accept only if variance well-identified AND SEs are finite
+                ses_ok = np.isfinite(cand.bse.values).all()
                 _ = cand.conf_int()
-                if gv > 1e-6:
+                if gv > 1e-6 and ses_ok:
                     fit = cand
             except Exception:
                 fit = None
@@ -234,8 +236,9 @@ for cname, fname in COHORTS.items():
                 mm = smf.mixedlm(formula, data, groups=data["patient_id"])
                 cand = mm.fit(method="lbfgs", disp=False)
                 gv = float(cand.cov_re.iloc[0,0]) if cand.cov_re.size else 0.0
+                ses_ok = np.isfinite(cand.bse.values).all()
                 _ = cand.conf_int()
-                if gv > 1e-6:
+                if gv > 1e-6 and ses_ok:
                     f, tag = cand, "mixed random-intercept"
             except Exception:
                 f = None
