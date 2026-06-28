@@ -162,6 +162,18 @@ if n_unk > 0:
 
 long_df.to_csv("a1c_trajectory_full_GP.csv", index=False)  # full, incl. both (QA)
 analysis_df = long_df[long_df["surgery_type"].isin(["sleeve", "bypass"])].copy()
+
+# Analytic group counts (after exclusion of "both"/unknown) — manuscript numbers
+print("\nAnalytic surgery groups (sleeve/bypass only):")
+for st in ["sleeve", "bypass"]:
+    n = analysis_df[analysis_df["surgery_type"]==st]["patient_id"].nunique()
+    print(f"  {st}: n={n}")
+n_excl_both = long_df[long_df["surgery_type"]=="both"]["patient_id"].nunique()
+n_excl_unk  = long_df[long_df["surgery_type"].isna()]["patient_id"].nunique()
+if n_excl_both > 0:
+    print(f"  excluded (mixed sleeve+bypass): n={n_excl_both}")
+if n_excl_unk > 0:
+    print(f"  excluded (unknown CPT): n={n_excl_unk}")
 print(f"wrote a1c_trajectory_full_GP.csv "
       f"({long_df['patient_id'].nunique()} patients, {len(long_df)} patient-year rows)")
 
@@ -197,17 +209,60 @@ for st in ["sleeve", "bypass"]:
 pd.DataFrame(summ).to_csv("a1c_trajectory_full_GP_summary.csv", index=False)
 print("wrote a1c_trajectory_full_GP_summary.csv")
 
+# Issue 4: baseline characteristics by surgery type (mini Table 1 for subgroup)
+# Pull from study_covariates_new.csv if available (has age, BMI, diabetes duration)
+try:
+    cov = pd.read_csv("study_covariates_new.csv", dtype={"patient_id": str})
+    base_a1c = (long_df[long_df["year"]==0]
+                [["patient_id","a1c","surgery_type"]]
+                .rename(columns={"a1c":"baseline_a1c_collected"}))
+    char = cov.merge(base_a1c, on="patient_id", how="inner")
+    char_rows = []
+    for st in ["sleeve","bypass"]:
+        g = char[char["surgery_type"]==st]
+        row = {"surgery_type": st, "n": len(g)}
+        for col, label in [("baseline_a1c_collected","baseline_a1c"),
+                           ("age_at_surgery_approx","age"),
+                           ("preoperative_bmi","bmi"),
+                           ("diabetes_duration_log1p","dm_duration_log1p")]:
+            if col in g.columns:
+                v = pd.to_numeric(g[col], errors="coerce")
+                row[f"{label}_mean"] = round(v.mean(),2)
+                row[f"{label}_sd"]   = round(v.std(),2)
+                row[f"{label}_n"]    = int(v.notna().sum())
+        char_rows.append(row)
+    char_df = pd.DataFrame(char_rows)
+    char_df.to_csv("sleeve_vs_bypass_baseline.csv", index=False)
+    print("\n=== BASELINE CHARACTERISTICS BY SURGERY TYPE ===")
+    print(char_df.to_string(index=False))
+    print("  (saved to sleeve_vs_bypass_baseline.csv)")
+except Exception as e:
+    print(f"\n  Baseline characteristics table skipped: {e}")
+
+# Issue 2: honest wording about analytic n
+sl_n = analysis_df[analysis_df["surgery_type"]=="sleeve"]["patient_id"].nunique()
+by_n = analysis_df[analysis_df["surgery_type"]=="bypass"]["patient_id"].nunique()
+print(f"\n  Manuscript note: among 376 GP patients, {sl_n} sleeve and "
+      f"{by_n} bypass patients contributed longitudinal A1c data.")
+
 # Coverage report: how many of the 376 have A1c at each timepoint
+# Saved to CSV for reviewers ("how many contributed Year 3 A1c?")
 print("\n=== A1c COVERAGE ACROSS FULL GP COHORT (n=376) ===")
 print(f"  {'Year':<8}{'n with A1c':<16}{'% of 376':<12}{'sleeve n':<12}{'bypass n'}")
+coverage_rows = []
 for yr in range(0, YEARS+1):
     yr_df = long_df[long_df["year"] == yr]
     n_total = yr_df["patient_id"].nunique()
     n_sl = yr_df[yr_df["surgery_type"]=="sleeve"]["patient_id"].nunique()
     n_by = yr_df[yr_df["surgery_type"]=="bypass"]["patient_id"].nunique()
     label = "baseline" if yr == 0 else f"Year {yr}"
-    print(f"  {label:<8}{n_total:<16}{100*n_total/len(all_ids):.1f}%      "
-          f"{n_sl:<12}{n_by}")
+    pct = 100*n_total/len(all_ids)
+    print(f"  {label:<8}{n_total:<16}{pct:.1f}%      {n_sl:<12}{n_by}")
+    coverage_rows.append({"year": yr, "label": label,
+                          "n_with_a1c": n_total, "pct_of_376": round(pct,1),
+                          "sleeve_n": n_sl, "bypass_n": n_by})
+pd.DataFrame(coverage_rows).to_csv("a1c_trajectory_full_GP_coverage.csv", index=False)
+print("  (saved to a1c_trajectory_full_GP_coverage.csv)")
 
 print("\n=== FULL GP COHORT A1c BY SURGERY TYPE (mean) ===")
 sdf = pd.DataFrame(summ)
@@ -227,7 +282,28 @@ try:
     md = analysis_df.copy()
     md["sleeve_bin"] = (md["surgery_type"] == "sleeve").astype(int)
     md["year_cat"] = md["year"].astype("category")
-    print("\n=== SLEEVE vs BYPASS MIXED MODEL (a1c ~ surgery_type * C(year)) ===")
+
+    # Issue 3: check baseline (Year 0) exists per patient before running model
+    missing_base = (md.groupby("patient_id")
+                    .apply(lambda x: 0 not in x["year"].values))
+    n_miss = int(missing_base.sum())
+    print(f"\n  Patients with post-op A1c but no baseline: {n_miss} "
+          f"(will be dropped from baseline-adjusted model, retained in summary)")
+
+    print("\n=== SLEEVE vs BYPASS MIXED MODEL (a1c ~ surgery_type * C(year) + baseline_a1c) ===")
+    # Issue 1: adjust for baseline A1c to isolate the change attributable to
+    # surgery type, not the starting level. Without this, a group with higher
+    # baseline A1c could show greater absolute reduction purely because of
+    # regression to the mean, not a true procedure effect.
+    baseline_map = (analysis_df[analysis_df["year"] == 0]
+                    .set_index("patient_id")["a1c"].to_dict())
+    md["baseline_a1c"] = md["patient_id"].map(baseline_map)
+    md_adj = md[md["year"] != 0].dropna(subset=["baseline_a1c"]).copy()
+    n_dropped = md["patient_id"].nunique() - md_adj["patient_id"].nunique()
+    if n_dropped > 0:
+        print(f"  NOTE: {n_dropped} patients dropped from adjusted model "
+              f"(no baseline A1c — have post-op data only)")
+
     # Model selection: try random-intercept mixed model first.
     # If the random-effect variance is estimated near zero (singular), patient-
     # level clustering contributes little beyond residual noise, and MixedLM
@@ -237,30 +313,39 @@ try:
     # patient correlation, without the singularity problem.
     fit = None
     try:
-        m1 = smf.mixedlm("a1c ~ sleeve_bin * C(year_cat)", md,
-                          groups=md["patient_id"])
+        m1 = smf.mixedlm("a1c ~ sleeve_bin * C(year_cat) + baseline_a1c",
+                          md_adj, groups=md_adj["patient_id"])
         cand = m1.fit(method="lbfgs", disp=False)
         gv = float(cand.cov_re.iloc[0,0]) if cand.cov_re.size else 0.0
         _ = cand.conf_int()   # raises if singular
         if gv > 1e-6:         # well-identified random effect
             fit = cand
-            tag = "random-intercept mixed model"
+            tag = "random-intercept mixed model (baseline-A1c-adjusted)"
     except Exception:
         fit = None
     if fit is None:
         # Fallback: random-effect variance is singular → OLS cluster-robust
-        fit = smf.ols("a1c ~ sleeve_bin * C(year_cat)", md).fit(
-            cov_type="cluster", cov_kwds={"groups": md["patient_id"]})
-        tag = "OLS cluster-robust SE by patient (random-effect variance singular)"
+        fit = smf.ols("a1c ~ sleeve_bin * C(year_cat) + baseline_a1c",
+                      md_adj).fit(
+            cov_type="cluster", cov_kwds={"groups": md_adj["patient_id"]})
+        tag = "OLS cluster-robust SE by patient (baseline-A1c-adjusted; random-effect singular)"
     ci = fit.conf_int()
     print(f"  [{tag}]")
     print(f"  sleeve main effect p = {fit.pvalues.get('sleeve_bin', float('nan')):.4f}")
     print(f"  sleeve x year interaction terms:")
     print(f"    (tests whether sleeve-bypass difference in A1c CHANGE differs by year)")
-    for t in [t for t in fit.pvalues.index if "sleeve_bin:" in t]:
+    model_rows = []
+    for t in fit.pvalues.index:
         lo = ci.loc[t, 0] if t in ci.index else float("nan")
         hi = ci.loc[t, 1] if t in ci.index else float("nan")
-        print(f"    {t}: coef={fit.params[t]:+.3f} [95%CI {lo:+.3f},{hi:+.3f}] p={fit.pvalues[t]:.4f}")
+        model_rows.append({"term": t, "coef": round(fit.params[t],4),
+                           "ci_lo": round(lo,4), "ci_hi": round(hi,4),
+                           "p_value": round(fit.pvalues[t],4)})
+        if "sleeve_bin:" in t:
+            print(f"    {t}: coef={fit.params[t]:+.3f} "
+                  f"[95%CI {lo:+.3f},{hi:+.3f}] p={fit.pvalues[t]:.4f}")
+    pd.DataFrame(model_rows).to_csv("sleeve_bypass_mixedmodel.csv", index=False)
+    print("  (full model saved to sleeve_bypass_mixedmodel.csv)")
 except ImportError:
     print("\n(statsmodels not available — mixed model skipped)")
 
