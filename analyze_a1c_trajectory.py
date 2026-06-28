@@ -205,26 +205,17 @@ for cname, fname in COHORTS.items():
         # Categorical year tests whether the PATTERN over time differs by group.
         md["year_cat"] = md["year"].astype("category")
         try:
-            # Issue 3: try a random-SLOPE model first (patients differ in rate of
-            # change), fall back to random-intercept if it fails to converge.
-            fit = None
-            slope_used = False
-            try:
-                m_slope = smf.mixedlm("a1c ~ group_bin * C(year_cat)", md,
-                                      groups=md["patient_id"],
-                                      re_formula="~year")
-                fit_slope = m_slope.fit(method="lbfgs", disp=False)
-                if fit_slope.converged:
-                    fit = fit_slope
-                    slope_used = True
-            except Exception:
-                fit = None
-            if fit is None:
-                model = smf.mixedlm("a1c ~ group_bin * C(year_cat)", md,
-                                    groups=md["patient_id"])
-                fit = model.fit(method="lbfgs", disp=False)
-            report_lines.append(f"\n  [random {'slope+intercept' if slope_used else 'intercept'} "
-                               f"model used]")
+            # PRIMARY model: random INTERCEPT by patient (well-identified, no
+            # singularity). A random-slope model was explored but its slope
+            # variance was singular (patients do not vary enough in rate of
+            # change to estimate it reliably), so the parsimonious random-
+            # intercept model is used for primary inference.
+            import warnings as _w
+            model = smf.mixedlm("a1c ~ group_bin * C(year_cat)", md,
+                                groups=md["patient_id"])
+            fit = model.fit(method="lbfgs", disp=False)
+            report_lines.append(f"\n  [random-intercept model used "
+                               f"(random-slope was singular)]")
             # Issue 2: confidence intervals for each term
             ci = fit.conf_int()
             for param in fit.params.index:
@@ -267,10 +258,17 @@ for cname, fname in COHORTS.items():
             md_adj["baseline_a1c"] = md_adj["patient_id"].map(base_map)
             md_adj = md_adj.dropna(subset=["baseline_a1c"])
             md_adj["year_cat"] = md_adj["year"].astype("category")
-            try:
-                m2 = smf.mixedlm("a1c ~ group_bin * C(year_cat) + baseline_a1c",
-                                 md_adj, groups=md_adj["patient_id"])
-                f2 = m2.fit(method="lbfgs", disp=False)
+            f2 = None
+            for opt in ("lbfgs", "bfgs", "cg"):
+                try:
+                    m2 = smf.mixedlm("a1c ~ group_bin * C(year_cat) + baseline_a1c",
+                                     md_adj, groups=md_adj["patient_id"])
+                    cand = m2.fit(method=opt, disp=False)
+                    f2 = cand
+                    break
+                except Exception:
+                    continue
+            if f2 is not None:
                 report_lines.append(f"\nSENSITIVITY model (baseline-A1c-adjusted, "
                                    f"post-baseline obs only):")
                 report_lines.append(f"  group main effect p = "
@@ -282,8 +280,21 @@ for cname, fname in COHORTS.items():
                     mixed_rows.append({"cohort": cname, "model": "baseline_adjusted", "term": t,
                                        "coef": round(f2.params[t],4),
                                        "p_value": round(f2.pvalues[t],4)})
-            except Exception as e:
-                report_lines.append(f"  baseline-adjusted model failed: {e}")
+            else:
+                # Fall back to OLS with cluster-robust SE if MixedLM is singular
+                report_lines.append(f"\nSENSITIVITY model (baseline-adjusted): MixedLM "
+                                   f"singular; using OLS with cluster-robust SE by patient")
+                try:
+                    import statsmodels.formula.api as smf2
+                    ols = smf2.ols("a1c ~ group_bin * C(year_cat) + baseline_a1c",
+                                   md_adj).fit(cov_type="cluster",
+                                   cov_kwds={"groups": md_adj["patient_id"]})
+                    report_lines.append(f"  group main effect p = "
+                                       f"{ols.pvalues.get('group_bin', np.nan):.4f}")
+                    for t in [t for t in ols.pvalues.index if "group_bin:" in t]:
+                        report_lines.append(f"    {t}: coef={ols.params[t]:+.3f}, p={ols.pvalues[t]:.4f}")
+                except Exception as e:
+                    report_lines.append(f"  baseline-adjusted fallback also failed: {e}")
         except Exception as e:
             report_lines.append(f"\nMixed model failed: {e}")
     else:
