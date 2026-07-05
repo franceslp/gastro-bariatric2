@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ed_hosp_binary_with_BMI_optimal.py
+analyze_ed_hosp_by_surgery_type_optimal.py
 
 Sleeve vs bypass comparison of ED visits and hospitalizations among GP patients.
 No new GCS scan needed — joins surgery type onto existing binary output files.
