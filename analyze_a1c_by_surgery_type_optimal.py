@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-a1c_trajectory_with_BMI_optimal.py
+analyze_a1c_by_surgery_type_optimal.py
 
 Surgery-type subgroup analysis of A1c trajectories. Two analyses in one script:
 
