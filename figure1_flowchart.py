@@ -14,20 +14,19 @@ ax.axis('off')
 boxes = [
     ("All patients with gastroparesis and diabetes\nundergoing bariatric surgery\nTriNetX (2015–2025)\nN = 1,118", 13.7, '#dbe9f7'),
     ("After age ≥18 years restriction\nN = 1,117", 12.1, '#dbe9f7'),
-    ("After confirmed K31.84 (gastroparesis diagnosis)\nwithin 1 year of surgery\nN = 907", 10.5, '#dbe9f7'),
-    ("After confirmed E10/E11 (diabetes diagnosis)\nwithin 1 year of surgery\nN = 879", 8.9, '#dbe9f7'),
+    ("After confirmed K31.84 (gastroparesis diagnosis)\nwithin 1 year before surgery\nN = 907", 10.5, '#dbe9f7'),
+    ("After confirmed E10/E11 (diabetes diagnosis)\nwithin 1 year before surgery\nN = 879", 8.9, '#dbe9f7'),
     ("After gastric emptying study (GES)\nconfirming K31.84 diagnosis\nN = 384", 7.3, '#dbe9f7'),
     ("Final gastroparesis cohort\n(single bariatric surgery)\nN = 376", 5.7, '#dbe9f7'),
     ("Complete-case cohort\n(matching-eligible covariates)\nN = 229", 4.1, '#dbe9f7'),
 ]
 
-# NOTE: if the n = 8 exclusion was only for multiple surgeries, delete " / other criteria" below
 excl = [
     ("Excluded: age <18 years\n(n = 1)", 12.9),
-    ("Excluded: no gastroparesis diagnosis\nwithin 1 year of surgery\n(n = 210)", 11.3),
-    ("Excluded: no diabetes diagnosis\nwithin 1 year of surgery\n(n = 28)", 9.7),
+    ("Excluded: no gastroparesis diagnosis\nwithin 1 year before surgery\n(n = 210)", 11.3),
+    ("Excluded: no diabetes diagnosis\nwithin 1 year before surgery\n(n = 28)", 9.7),
     ("Excluded: no confirmatory gastric\nemptying study\n(n = 495)", 8.1),
-    ("Excluded: multiple bariatric\nsurgeries / other criteria\n(n = 8)", 6.5),
+    ("Excluded: multiple bariatric surgeries\n(n = 8)", 6.5),
     ("Excluded: missing covariate data\nrequired for PSM\n(n = 147)", 4.9),
 ]
 
