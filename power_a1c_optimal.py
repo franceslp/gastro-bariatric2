@@ -2,24 +2,25 @@
 """
 power_a1c_optimal.py
 
-Power / minimum detectable difference (MDD) for the between-group A1C comparison
-(gastroparesis vs matched comparator), two-sided alpha = 0.05, power = 0.80.
+Sensitivity power analysis for the between-group A1C comparison
+(gastroparesis vs matched comparator): given the achieved sample sizes,
+the minimum detectable difference (MDD) at 80% power, two-sided alpha = 0.05.
 
-Approximation: two-sample comparison of mean A1C at each follow-up year, using the
-observed sample sizes. (The primary analysis is a mixed-effects model; a closed-form
-two-sample calculation at the primary timepoint is a standard approximation.)
+Method (two-sample comparison of mean A1C at each follow-up year):
+    SE  = sqrt(SD_gp^2 / n_gp + SD_comp^2 / n_comp)
+    MDD = (z_{1-alpha/2} + z_{power}) * SE  =  (1.96 + 0.84) * SE  ~= 2.80 * SE
+SDs and n are the OBSERVED values at each year (not the observed difference,
+so this is not "observed power").
 
-Inputs are the per-year n and SD from a1c_stats_timepoint_optimal.csv
+Primary timepoint reported in the paper: Year 1 -> MDD = 0.35 points.
+
+Inputs: per-year n and SD from a1c_stats_timepoint_optimal.csv
 (also in the workbook, sheet "A1c Trajectory").
-
-Two SD assumptions are reported:
-  (a) assumed SD = 1.4% (close to baseline A1C variability; used for the paper's statement)
-  (b) observed SDs at each year
 """
 import math
 from scipy.stats import norm
 
-ALPHA, POWER, TARGET_DIFF, ASSUMED_SD = 0.05, 0.80, 0.4, 1.4
+ALPHA, POWER = 0.05, 0.80
 Z = norm.ppf(1 - ALPHA / 2) + norm.ppf(POWER)          # 1.96 + 0.84 = 2.80
 
 #        year: (GP n, GP SD, Comp n, Comp SD)   from a1c_stats_timepoint_optimal.csv
@@ -29,14 +30,10 @@ DATA = {1: (186, 1.15, 192, 1.30),
         4: ( 60, 2.08,  83, 1.73),
         5: ( 40, 1.69,  62, 1.58)}
 
-def power_for(diff, se):
-    return norm.cdf(diff / se - norm.ppf(1 - ALPHA / 2))
-
-print(f"alpha={ALPHA}, power={POWER}, target difference={TARGET_DIFF} points\n")
-print(f"{'Year':<5}{'n GP/Comp':<12}{'MDD (SD=1.4)':<15}{'Power@0.4 (SD=1.4)':<21}"
-      f"{'MDD (observed SD)':<19}{'Power@0.4 (observed)'}")
+print(f"Sensitivity power analysis: alpha={ALPHA} (two-sided), power={POWER:.0%}, "
+      f"multiplier={Z:.2f}\n")
+print(f"{'Year':<6}{'n GP/Comp':<12}{'SD GP/Comp':<14}{'SE':<8}{'MDD (points)'}")
 for yr, (n1, sd1, n2, sd2) in DATA.items():
-    se_a = ASSUMED_SD * math.sqrt(1 / n1 + 1 / n2)
-    se_o = math.sqrt(sd1**2 / n1 + sd2**2 / n2)
-    print(f"{yr:<5}{f'{n1}/{n2}':<12}{Z*se_a:<15.2f}{power_for(TARGET_DIFF, se_a):<21.0%}"
-          f"{Z*se_o:<19.2f}{power_for(TARGET_DIFF, se_o):.0%}")
+    se = math.sqrt(sd1**2 / n1 + sd2**2 / n2)
+    flag = "   <- primary timepoint (reported in paper)" if yr == 1 else ""
+    print(f"{yr:<6}{f'{n1}/{n2}':<12}{f'{sd1}/{sd2}':<14}{se:<8.3f}{Z*se:.2f}{flag}")
