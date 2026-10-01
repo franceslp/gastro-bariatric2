@@ -12,9 +12,11 @@ Output: hosp_frequency_among_hospitalized_optimal.txt (new file; nothing overwri
 
 Models
   1. Welch t-test on raw counts (unadjusted)
-  2. Negative binomial, offset = log(follow-up years)            <- value in paper
-  3. Negative binomial, offset = log(follow-up years) + pre-op hospitalizations
-     (sensitivity: does the result hold after accounting for preoperative use?)
+  2. Negative binomial GLM, offset = log(follow-up years)        <- value in paper
+     Fit exactly as in collect_ed_hospitalizations_optimal.py:
+     smf.glm(..., family=sm.families.NegativeBinomial(), offset=log_fu)
+     (statsmodels default dispersion alpha = 1.0)
+  3. Same model + pre-op hospitalizations (sensitivity; not reported in manuscript)
 """
 import numpy as np
 import pandas as pd
@@ -52,9 +54,10 @@ out(f"1. Welch t-test (unadjusted):  p = {t.pvalue:.4f}")
 out()
 
 def nb_report(label, formula, data):
-    """Negative binomial with dispersion (alpha) estimated from the data."""
+    """Negative binomial GLM, same specification as the ED collection script."""
     off = np.log(data["fu_years"])
-    m = smf.negativebinomial(formula, data=data, offset=off).fit(disp=False, maxiter=200)
+    m = smf.glm(formula, data=data, family=sm.families.NegativeBinomial(),
+                offset=off).fit()
     b, se = m.params["gp"], m.bse["gp"]
     lo, hi = np.exp(b - 1.96 * se), np.exp(b + 1.96 * se)
     out(f"{label}")
@@ -64,9 +67,9 @@ def nb_report(label, formula, data):
             f"p = {m.pvalues['IP_pre_5yr']:.4f}")
     out()
 
-nb_report("2. Negative binomial, offset = log(follow-up years)  [paper reports IRR 1.90, 1.34-2.69]",
+nb_report("2. Negative binomial GLM, offset = log(follow-up years)  [paper reports IRR 1.90, 1.34-2.69]",
           "IP_post_5yr ~ gp", sub)
-nb_report("3. SENSITIVITY: + adjustment for pre-op hospitalizations",
+nb_report("3. Sensitivity (not reported): + adjustment for pre-op hospitalizations",
           "IP_post_5yr ~ gp + IP_pre_5yr", sub)
 
 with open(OUTFILE, "w") as f:
