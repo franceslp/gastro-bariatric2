@@ -33,7 +33,7 @@ ax.set_ylabel("Mean A1C (%)", fontsize=11)
 ax.set_title("A. A1C Trajectory", fontsize=13, fontweight='bold', loc='left')
 ax.legend(loc='upper right', frameon=False)
 # Mixed-effects model, group x year interaction (primary endpoint)
-ax.text(0.97, 0.03, "Group \u00d7 year interaction: all p\u22650.42",
+ax.text(0.97, 0.03, "Difference in A1C change over time: all p\u22650.42",
         transform=ax.transAxes, ha='right', va='bottom', fontsize=10)
 
 # ---- Number-at-risk row (SOARD requires denominators at each timepoint) ----
