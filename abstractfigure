@@ -69,7 +69,7 @@ ax.legend(loc='upper right', frameon=False)
 
 # ---------- Panel C: New-Onset Diabetes Complications ----------
 ax = axes[1, 0]
-labels = ['Any complication within 5 years\n(OR 0.96)']
+labels = ['Any complication\n(OR 0.96)']
 gp_pct = [28/136*100]     # 20.6%
 comp_pct = [27/127*100]   # 21.3%
 pvals = ['p=1.00']
