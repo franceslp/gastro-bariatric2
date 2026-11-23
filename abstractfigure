@@ -82,7 +82,7 @@ for i, p in enumerate(pvals):
 ax.set_xticks(x)
 ax.set_xticklabels(labels, fontsize=10)
 ax.set_xlim(-0.75, 0.75)
-ax.set_ylabel("Incidence among at-risk (%)", fontsize=11)
+ax.set_ylabel("Incidence (%)", fontsize=11)
 ax.set_ylim(0, 30)
 ax.set_title("C. New-Onset Diabetes Complications", fontsize=13, fontweight='bold', loc='left')
 ax.legend(loc='upper right', frameon=False)
